@@ -166,9 +166,9 @@ namespace AnalizadorLexico
                 new TokenDefinition(@"\/", "/", 53),
                 //new TokenDefinition(@"\%", "%", 53),
                 //new TokenDefinition(@"\^", "^", 53),
-                new TokenDefinition(@"[*<>\?\-+/A-Za-z->!]+", "Id", 31),
+                new TokenDefinition(@"[a-zA-Z_$][a-zA-Z_$0-9]*\s?", "Id", 31),
                 new TokenDefinition(@"([""'])(?:\\\1|.)*?\1", "String", 32),
-                new TokenDefinition(@"[-+]?\d*\.\d+([eE][-+]?\d+)?", "Flotante", 33),
+                new TokenDefinition(@"[-+]?[0-9]*\.[0-9]*", "Flotante", 33),
                 new TokenDefinition(@"[-+]?\d+", "Entero", 34),
             };
         }
@@ -198,11 +198,11 @@ namespace AnalizadorLexico
                     check = false;
                 }
             }
-            if (check && TableTokens[TableTokens.Count - 1] == 46)
+            if (check && Pairs[Pairs.Count - 1].Token == 46)
             {
                 textTree.Text = "Regla 1";
-                RemoveTokens(7, true, 0);
-                while (TableTokens.Count > 0)
+                RemoveTokens(7, true);
+                while (Pairs.Count > 0)
                 {
                     CheckRules();
                 }
@@ -211,7 +211,7 @@ namespace AnalizadorLexico
         
         private void CheckRules()
         {
-            while (TableTokens.Count > 0)
+            while (Pairs.Count > 0)
             {
                 CheckSent(Pairs, 0);
             }
@@ -225,12 +225,21 @@ namespace AnalizadorLexico
             if (Pairs[StartToken].Token == 10 && Pairs[StartToken + 1].Token == 31 && Pairs[StartToken + 2].Token == 100 && (Pairs[StartToken + 3].Token == 31 || Pairs[StartToken + 3].Token == 32 || Pairs[StartToken + 3].Token == 33 || Pairs[StartToken + 3].Token == 34) && Pairs[StartToken + 4].Token == 101)
             {
                 textTree.Text += ", Regla 9";
-                return RemoveTokens(5, false, 0);
+                SemanticToken token = new SemanticToken();
+                token.Rule = 9;
+                for (int i = 0; i < 5; i++)
+                {
+                    token.PairList.Add(Pairs[i]);
+                    token.TokenList.Add(Pairs[i].Token);
+                    token.LexemList.Add(TableLexems[i]);
+                }
+                SemanticTokens.Add(token);
+                return RemoveTokens(5, false);
             }
             // If
             else if ((Pairs[0].Token == 23 || Pairs[0].Token == 27) && Pairs[1].Token == 41)
             {
-                int inputInt = CheckIf(Pairs) + 1;
+                int inputInt = CheckIf(Pairs, 2) + 1;
                 int outputInt = 0;
 
                 if (inputInt != 1)
@@ -249,13 +258,13 @@ namespace AnalizadorLexico
                 List<Pair> temp_Sent = ReloadSent(Pairs, inputInt + 1);
                 outputInt = inputInt + 1 + temp_Sent.Count;
                 inputInt = CheckSent(temp_Sent, 0);
-                int removedTokens = RemoveTokens(outputInt - inputInt + 1, false, 0);
+                int removedTokens = RemoveTokens(outputInt - inputInt + 1, false);
 
-                if (TableTokens.Count > 0 && (TableTokens[0] == 24 && TableTokens[1] == 45))
+                if (Pairs.Count > 0 && (Pairs[0].Token == 24 && Pairs[1].Token == 45))
                 {
                     temp_Sent = ReloadSent(Pairs, 2);
                     CheckSent(temp_Sent, 0);
-                    return RemoveTokens(3, false, 0);
+                    return RemoveTokens(3, false);
                 }
                 else
                 {
@@ -272,7 +281,7 @@ namespace AnalizadorLexico
                     int outputInt = 0;
                     outputInt = inputInt + 1 + temp_Sent.Count;
                     inputInt = CheckSent(temp_Sent, 0);
-                    int removedTokens = RemoveTokens(outputInt - inputInt, false, 0);
+                    int removedTokens = RemoveTokens(outputInt - inputInt, false);
                     return 1;
                 }
                 else
@@ -311,12 +320,12 @@ namespace AnalizadorLexico
             }
         }
 
-        private int CheckIf(List<Pair> Pairs)
+        private int CheckIf(List<Pair> Pairs, int StartToken)
         {
             int tempInt = 0;
             // OpLog
             List<Pair> temp_OpLog = new List<Pair>();
-            for (int i = 2; i < Pairs.Count; i++)
+            for (int i = StartToken; i < Pairs.Count; i++)
             {
                 if (Pairs[i].Token != 42)
                 {
@@ -330,6 +339,7 @@ namespace AnalizadorLexico
             }
             if (CheckOpLog(temp_OpLog) && Pairs[tempInt + 1].Token == 45)
             {
+                RemoveTokens(tempInt - StartToken, false);
                 return tempInt;
             }
             else
@@ -353,8 +363,6 @@ namespace AnalizadorLexico
                     token.LexemList.Add(TableLexems[i]);
                 }
                 SemanticTokens.Add(token);
-
-                textTree.Text += ", Regla 4";
                 return true;
             }
             else
@@ -505,16 +513,12 @@ namespace AnalizadorLexico
             return temp_Sent;
         }
 
-        private int RemoveTokens(int a, bool b, int rule)
+        private int RemoveTokens(int a, bool b)
         {
             Pairs = Pairs.Skip(a).Take(Pairs.Count - a).ToList();
-            TableTokens = TableTokens.Skip(a).Take(TableTokens.Count - a).ToList();
-            TableLexems = TableLexems.Skip(a).Take(TableLexems.Count - a).ToList();
             if (b)
             {
                 Pairs.RemoveAt(Pairs.Count - 1);
-                TableTokens.RemoveAt(TableTokens.Count - 1);
-                TableLexems.RemoveAt(TableLexems.Count - 1);
                 return a + 1;
             }
             return a;
@@ -522,9 +526,10 @@ namespace AnalizadorLexico
 
         private void btnSem_Click(object sender, EventArgs e)
         {
+            int cont = 1;
             foreach (var sToken in SemanticTokens)
             {
-                textTreeErrors.Text += "Rule " + sToken.Rule + ": ";
+                //textTreeErrors.Text += "Rule " + sToken.Rule + ": ";
                 switch (sToken.Rule)
                 {
                     case 4:
@@ -545,16 +550,43 @@ namespace AnalizadorLexico
                         textTreeErrors.Text += "\r\n";
                         break;
                     case 9:
+                        textTreeErrors.Text += "Declaration: ";
+                        switch (sToken.LexemList[0])
+                        {
+                            case "int":
+                                if (sToken.TokenList[3] == 34)
+                                {
+                                    textTreeErrors.Text += "[" + sToken.LexemList[2] + "," + sToken.LexemList[1] + "," + sToken.LexemList[3] + ",L" + cont + "]";
+                                    cont++;
+                                }
+                                break;
+                            case "string":
+                                if (sToken.TokenList[3] == 32)
+                                {
+                                    textTreeErrors.Text += "[" + sToken.LexemList[2] + "," + sToken.LexemList[1] + "," + sToken.LexemList[3] + ",L" + cont + "]";
+                                    cont++;
+                                }
+                                break;
+                            case "double":
+                                if (sToken.TokenList[3] == 33)
+                                {
+                                    textTreeErrors.Text += "[" + sToken.LexemList[2] + "," + sToken.LexemList[1] + "," + sToken.LexemList[3] + ",L" + cont + "]";
+                                    cont++;
+                                }
+                                break;
+                            default:
+                                break;
+                        }
+                        /*
                         for (int i = 0; i < sToken.LexemList.Count; i++)
                         {
                             if (i > 0)
                             {
-                                textTreeErrors.Text += ", " ;
+                                textTreeErrors.Text += ", ";
                             }
-
-                            textTreeErrors.Text += sToken.TokenList[i];
+                            textTreeErrors.Text += "[" + sToken.TokenList[i] + "," + sToken.LexemList[i] + "]";
                             //textTreeErrors.Text += sToken.LexemList[i];
-                        }
+                        }*/
                         /*foreach (var token in sToken.LexemList)
                         {
                             textTreeErrors.Text += ", " + token;
